@@ -24,6 +24,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 
 // Forward declarations (implemented in object.c)
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
@@ -196,6 +197,62 @@ int head_update(const ObjectID *new_commit) {
 int commit_create(const char *message, ObjectID *commit_id_out) {
     // TODO: Implement commit creation
     // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    ObjectID tree_id;
+
+    // 1. Build tree from index
+    if (tree_from_index(&tree_id) != 0) {
+        return -1;
+    }
+
+    // 2. Get parent commit (if exists)
+    ObjectID parent_id;
+    ObjectID *parent_ptr = NULL;
+
+    if (head_read(&parent_id) == 0) {
+        parent_ptr = &parent_id;
+    }
+
+    // 3. Prepare commit structure
+    Commit commit;
+    memset(&commit, 0, sizeof(Commit));
+
+    commit.tree = tree_id;
+
+    if (parent_ptr) {
+        commit.parent = *parent_ptr;
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0;
+    }
+
+    // 4. Set author and message
+    strncpy(commit.author, pes_author(), sizeof(commit.author) - 1);
+    strncpy(commit.message, message, sizeof(commit.message) - 1);
+
+    // 5. Set timestamp
+    commit.timestamp = time(NULL);
+
+    // 6. Serialize commit
+    void *data;
+    size_t len;
+
+    if (commit_serialize(&commit, &data, &len) != 0) {
+        return -1;
+    }
+
+    // 7. Write commit object
+    ObjectID commit_id;
+    if (object_write(OBJ_COMMIT, data, len, &commit_id) != 0) {
+        free(data);
+        return -1;
+    }
+
+    free(data);
+
+    // 8. Update HEAD
+    if (head_update(&commit_id) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
